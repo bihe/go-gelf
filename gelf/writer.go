@@ -14,7 +14,7 @@ type Writer interface {
 	WriteMessage(*Message) error
 }
 
-// Writer implements io.Writer and is used to send both discrete
+// GelfWriter implements io.Writer and is used to send both discrete
 // messages to a graylog2 server, or data from a stream-oriented
 // interface (like the functions in log).
 type GelfWriter struct {
@@ -31,4 +31,9 @@ func (w *GelfWriter) Close() error {
 		return nil
 	}
 	return w.conn.Close()
+}
+
+// WriterOptions are used to pass options to a GelfWriter
+type WriterOptions struct {
+	CallDepth int
 }

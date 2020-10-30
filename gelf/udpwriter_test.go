@@ -17,8 +17,10 @@ import (
 	"time"
 )
 
+var writerOpts = WriterOptions{}
+
 func TestNewUDPWriter(t *testing.T) {
-	w, err := NewUDPWriter("")
+	w, err := NewUDPWriter("", writerOpts)
 	if err == nil || w != nil {
 		t.Errorf("New didn't fail")
 		return
@@ -31,7 +33,7 @@ func sendAndRecv(msgData string, compress CompressType) (*Message, error) {
 		return nil, fmt.Errorf("NewReader: %s", err)
 	}
 
-	w, err := NewUDPWriter(r.Addr())
+	w, err := NewUDPWriter(r.Addr(), writerOpts)
 	if err != nil {
 		return nil, fmt.Errorf("NewUDPWriter: %s", err)
 	}
@@ -51,7 +53,7 @@ func sendAndRecvMsg(msg *Message, compress CompressType) (*Message, error) {
 		return nil, fmt.Errorf("NewReader: %s", err)
 	}
 
-	w, err := NewUDPWriter(r.Addr())
+	w, err := NewUDPWriter(r.Addr(), writerOpts)
 	if err != nil {
 		return nil, fmt.Errorf("NewUDPWriter: %s", err)
 	}
@@ -63,6 +65,11 @@ func sendAndRecvMsg(msg *Message, compress CompressType) (*Message, error) {
 
 	w.Close()
 	return r.ReadMessage()
+}
+
+func sendAndRecvOpts(msgData string, compress CompressType, opts WriterOptions) (*Message, error) {
+	// add another call-stck
+	return sendAndRecvCallStackOpts(msgData, compress, opts)
 }
 
 // tests single-message (non-chunked) messages that are split over
@@ -113,6 +120,72 @@ func TestWriteSmallOneLine(t *testing.T) {
 	}
 
 	fileExpected := "/go-gelf/gelf/udpwriter_test.go"
+	if !strings.HasSuffix(msg.Extra["_file"].(string), fileExpected) {
+		t.Errorf("msg.File: expected %s, got %s", fileExpected,
+			msg.Extra["_file"].(string))
+		return
+	}
+
+	if len(msg.Extra) != 2 {
+		t.Errorf("extra fields in %v (expect only file and line)", msg.Extra)
+		return
+	}
+}
+
+func TestWriteSmallOneLineCallStack(t *testing.T) {
+	msgData := "some awesome thing\n"
+	msgDataTrunc := msgData[:len(msgData)-1]
+
+	msg, err := sendAndRecvOpts(msgData, CompressGzip, WriterOptions{CallDepth: 1})
+	if err != nil {
+		t.Errorf("sendAndRecv: %s", err)
+		return
+	}
+
+	// we should remove the trailing newline
+	if msg.Short != msgDataTrunc {
+		t.Errorf("msg.Short: expected %s, got %s",
+			msgDataTrunc, msg.Short)
+		return
+	}
+
+	if msg.Full != "" {
+		t.Errorf("msg.Full: expected %s, got %s", msgData, msg.Full)
+		return
+	}
+
+	t.Logf("file: %s:%.0f", msg.Extra["_file"], msg.Extra["_line"])
+
+	// if the std. callstack-depth is used, we get the real file "udpwriter_callstack_test.go"
+	fileExpected := "/go-gelf/gelf/udpwriter_callstack_test.go"
+	if !strings.HasSuffix(msg.Extra["_file"].(string), fileExpected) {
+		t.Errorf("msg.File: expected %s, got %s", fileExpected,
+			msg.Extra["_file"].(string))
+		return
+	}
+
+	// change the callstack - skip the very last file
+	msg, err = sendAndRecvOpts(msgData, CompressGzip, WriterOptions{CallDepth: 2})
+	if err != nil {
+		t.Errorf("sendAndRecv: %s", err)
+		return
+	}
+
+	// we should remove the trailing newline
+	if msg.Short != msgDataTrunc {
+		t.Errorf("msg.Short: expected %s, got %s",
+			msgDataTrunc, msg.Short)
+		return
+	}
+
+	if msg.Full != "" {
+		t.Errorf("msg.Full: expected %s, got %s", msgData, msg.Full)
+		return
+	}
+
+	t.Logf("file: %s:%.0f", msg.Extra["_file"], msg.Extra["_line"])
+
+	fileExpected = "/go-gelf/gelf/udpwriter_test.go"
 	if !strings.HasSuffix(msg.Extra["_file"].(string), fileExpected) {
 		t.Errorf("msg.File: expected %s, got %s", fileExpected,
 			msg.Extra["_file"].(string))
@@ -242,7 +315,7 @@ func BenchmarkWriteBestSpeed(b *testing.B) {
 		b.Fatalf("NewReader: %s", err)
 	}
 	go io.Copy(ioutil.Discard, r)
-	w, err := NewUDPWriter(r.Addr())
+	w, err := NewUDPWriter(r.Addr(), writerOpts)
 	if err != nil {
 		b.Fatalf("NewUDPWriter: %s", err)
 	}
@@ -268,7 +341,7 @@ func BenchmarkWriteNoCompression(b *testing.B) {
 		b.Fatalf("NewReader: %s", err)
 	}
 	go io.Copy(ioutil.Discard, r)
-	w, err := NewUDPWriter(r.Addr())
+	w, err := NewUDPWriter(r.Addr(), writerOpts)
 	if err != nil {
 		b.Fatalf("NewUDPWriter: %s", err)
 	}
@@ -294,7 +367,7 @@ func BenchmarkWriteDisableCompressionCompletely(b *testing.B) {
 		b.Fatalf("NewReader: %s", err)
 	}
 	go io.Copy(ioutil.Discard, r)
-	w, err := NewUDPWriter(r.Addr())
+	w, err := NewUDPWriter(r.Addr(), writerOpts)
 	if err != nil {
 		b.Fatalf("NewUDPWriter: %s", err)
 	}
@@ -320,7 +393,7 @@ func BenchmarkWriteDisableCompressionAndPreencodeExtra(b *testing.B) {
 		b.Fatalf("NewReader: %s", err)
 	}
 	go io.Copy(ioutil.Discard, r)
-	w, err := NewUDPWriter(r.Addr())
+	w, err := NewUDPWriter(r.Addr(), writerOpts)
 	if err != nil {
 		b.Fatalf("NewUDPWriter: %s", err)
 	}
